@@ -39,10 +39,17 @@ Two components deployed together on a single EC2 t3.nano instance in `us-east-1`
 - Sends notification on booking success or failure
 
 **Hosting — EC2 t3.nano, us-east-1**
-- ~$3.80/month
+- Near-zero cost — instance only runs during snipe windows (see EventBridge below)
 - Nginx reverse proxies `/api/*` to FastAPI (port 8000), serves React build at `/`
 - FastAPI runs as a systemd service (auto-restart on crash, starts on boot)
 - HTTPS via Let's Encrypt (Certbot)
+
+**EventBridge Auto-Start/Stop**
+- Instance is stopped by default; EBS storage cost is ~$0.08/GB/month (negligible)
+- When a target is added, the backend creates an EventBridge scheduled rule to start the EC2 instance 10 minutes before the opening time
+- When a snipe job completes (success or failure), the bot calls the EC2 API to stop the instance
+- If multiple targets share the same opening time window, the instance stays running until all concurrent jobs finish
+- IAM role on the EC2 instance grants permissions to: create/delete EventBridge rules, stop the instance itself
 
 ---
 
