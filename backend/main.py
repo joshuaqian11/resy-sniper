@@ -36,7 +36,6 @@ def create_app(db=None, scheduler=None, aws_client=None) -> FastAPI:
         else:
             instance_id = AWSClient.get_instance_id()
             _aws = AWSClient(region="us-east-1", instance_id=instance_id)
-            _aws.instance_id = instance_id
         app.state.aws_client = _aws
 
         # Init scheduler

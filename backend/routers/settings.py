@@ -1,3 +1,4 @@
+import dataclasses
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from auth import require_api_key
@@ -16,10 +17,10 @@ class SettingsBody(BaseModel):
 @router.get("", dependencies=[Depends(require_api_key)])
 async def get_settings(request: Request):
     settings = await load_settings(request.app.state.db)
-    return settings.__dict__
+    return dataclasses.asdict(settings)
 
 @router.put("", dependencies=[Depends(require_api_key)])
 async def update_settings(body: SettingsBody, request: Request):
     settings = Settings(**body.model_dump())
     await save_settings(request.app.state.db, settings)
-    return settings.__dict__
+    return dataclasses.asdict(settings)

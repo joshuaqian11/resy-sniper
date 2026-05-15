@@ -66,3 +66,16 @@ async def test_unauthorized_request_rejected(test_app):
     client, _, _ = test_app
     resp = await client.get("/api/targets", headers={"x-api-key": "wrong"})
     assert resp.status_code == 401
+
+@pytest.mark.asyncio
+async def test_delete_non_pending_target_rejected(test_app):
+    client, db, _ = test_app
+    # Insert a target directly and set its status to 'booked'
+    target_id = await db.insert_target({
+        "venue_id": "999", "venue_name": "Test", "date": "2026-06-15",
+        "party_size": 2, "opening_time": "2099-05-16T09:00:00",
+        "preferred_start": None, "preferred_end": None,
+    })
+    await db.update_target_status(target_id, "booked")
+    resp = await client.delete(f"/api/targets/{target_id}", headers={"x-api-key": "test-key"})
+    assert resp.status_code == 409
