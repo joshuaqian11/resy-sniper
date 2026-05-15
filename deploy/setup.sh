@@ -25,7 +25,7 @@ npm ci
 npm run build
 
 # Env file (edit after running)
-cp /opt/resy-bot/.env.example /opt/resy-bot/.env
+cp /opt/resy-bot/backend/.env.example /opt/resy-bot/.env
 echo ">>> Edit /opt/resy-bot/.env before starting the service <<<"
 
 # systemd
