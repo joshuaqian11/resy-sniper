@@ -12,7 +12,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!resp.ok) throw new Error(`${method} ${path} → ${resp.status}`);
-  if (resp.status === 204) return undefined as T;
+  if (resp.status === 204) return undefined as unknown as T;
   return resp.json();
 }
 
