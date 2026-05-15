@@ -32,8 +32,8 @@ export function SettingsPage() {
 
   const field = (label: string, key: keyof AppSettings, type = "text") => (
     <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-gray-700">{label}</label>
-      <input type={type} className="border rounded px-3 py-1.5 text-sm font-mono"
+      <label htmlFor={key} className="text-sm font-medium text-gray-700">{label}</label>
+      <input id={key} type={type} className="border rounded px-3 py-1.5 text-sm font-mono"
         value={form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
     </div>
   );

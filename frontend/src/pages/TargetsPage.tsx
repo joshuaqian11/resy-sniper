@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { InputHTMLAttributes } from "react";
 import { api, Target, TargetCreate } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
 
@@ -17,7 +18,13 @@ export function TargetsPage() {
     try { setTargets(await api.targets.list()); } catch { setError("Failed to load targets"); }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    api.targets.list()
+      .then(data => { if (!cancelled) setTargets(data); })
+      .catch(() => { if (!cancelled) setError("Failed to load targets"); });
+    return () => { cancelled = true; };
+  }, []);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -39,10 +46,11 @@ export function TargetsPage() {
     catch { setError("Failed to delete target (may not be pending)"); }
   }
 
-  const field = (label: string, key: keyof TargetCreate, type = "text", extra?: object) => (
+  const field = (label: string, key: keyof TargetCreate, type = "text", extra?: InputHTMLAttributes<HTMLInputElement>) => (
     <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-gray-700">{label}</label>
+      <label htmlFor={key} className="text-sm font-medium text-gray-700">{label}</label>
       <input
+        id={key}
         type={type}
         className="border rounded px-3 py-1.5 text-sm"
         value={String(form[key] ?? "")}
@@ -66,14 +74,14 @@ export function TargetsPage() {
         {field("Party Size", "party_size", "number", { min: 1, max: 20, required: true })}
         {field("Opening Time (local)", "opening_time", "datetime-local", { required: true })}
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-gray-700">Preferred Start (optional)</label>
-          <input type="time" className="border rounded px-3 py-1.5 text-sm"
+          <label htmlFor="preferred_start" className="text-sm font-medium text-gray-700">Preferred Start (optional)</label>
+          <input id="preferred_start" type="time" className="border rounded px-3 py-1.5 text-sm"
             value={form.preferred_start ?? ""}
             onChange={e => setForm(f => ({ ...f, preferred_start: e.target.value }))} />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-gray-700">Preferred End (optional)</label>
-          <input type="time" className="border rounded px-3 py-1.5 text-sm"
+          <label htmlFor="preferred_end" className="text-sm font-medium text-gray-700">Preferred End (optional)</label>
+          <input id="preferred_end" type="time" className="border rounded px-3 py-1.5 text-sm"
             value={form.preferred_end ?? ""}
             onChange={e => setForm(f => ({ ...f, preferred_end: e.target.value }))} />
         </div>
@@ -97,7 +105,7 @@ export function TargetsPage() {
             <div className="flex items-center gap-3">
               <StatusBadge status={t.status} />
               {t.status === "pending" && (
-                <button onClick={() => handleDelete(t.id)}
+                <button type="button" onClick={() => handleDelete(t.id)}
                   className="text-red-500 hover:text-red-700 text-sm">Delete</button>
               )}
             </div>
