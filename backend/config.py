@@ -2,7 +2,7 @@ from dataclasses import dataclass, fields
 from database import Database
 
 CONFIG_KEYS = [
-    "resy_api_key", "resy_auth_token",
+    "resy_api_key", "resy_email", "resy_password", "resy_cookies",
     "twilio_account_sid", "twilio_auth_token", "twilio_from",
     "phone_number",
 ]
@@ -10,7 +10,9 @@ CONFIG_KEYS = [
 @dataclass
 class Settings:
     resy_api_key: str = ""
-    resy_auth_token: str = ""
+    resy_email: str = ""
+    resy_password: str = ""
+    resy_cookies: str = ""
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_from: str = ""

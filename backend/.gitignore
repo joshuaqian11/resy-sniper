@@ -4,3 +4,7 @@ __pycache__/
 *.pyo
 .env
 resy.db
+*.db-shm
+*.db-wal
+test_resy.pyc
+

@@ -30,7 +30,13 @@ npm ci
 npm run build
 
 # Env file (edit after running)
-[ -f /opt/resy-bot/.env ] || cp /opt/resy-bot/backend/.env.example /opt/resy-bot/.env
+if [ ! -f /opt/resy-bot/.env ]; then
+  cat > /opt/resy-bot/.env <<'EOF'
+DASHBOARD_API_KEY=change-me
+EOF
+  chown ec2-user:ec2-user /opt/resy-bot/.env
+  chmod 600 /opt/resy-bot/.env
+fi
 echo ">>> Edit /opt/resy-bot/.env before starting the service <<<"
 
 # systemd

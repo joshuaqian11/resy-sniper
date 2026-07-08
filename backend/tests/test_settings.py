@@ -33,7 +33,9 @@ async def test_put_settings(test_app):
     client, db = test_app
     resp = await client.put("/api/settings", headers={"x-api-key": "test-key"}, json={
         "resy_api_key": "key123",
-        "resy_auth_token": "tok456",
+        "resy_email": "test@example.com",
+        "resy_password": "pass123",
+        "resy_cookies": "",
         "twilio_account_sid": "AC123",
         "twilio_auth_token": "twiltok",
         "twilio_from": "+15550001111",

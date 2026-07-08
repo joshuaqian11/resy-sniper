@@ -5,15 +5,16 @@ export function NavBar() {
   const link = (to: string, label: string) => (
     <Link
       to={to}
-      className={`px-4 py-2 rounded text-sm font-medium ${pathname === to ? "bg-indigo-700 text-white" : "text-indigo-100 hover:bg-indigo-600"}`}
+      className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${pathname === to ? "bg-[#2a2a35] text-white" : "text-gray-400 hover:text-white hover:bg-[#1e1e28]"}`}
     >
       {label}
     </Link>
   );
   return (
-    <nav className="bg-indigo-800 px-6 py-3 flex gap-2">
-      <span className="text-white font-bold mr-4">Resy Bot</span>
-      {link("/", "Targets")}
+    <nav className="bg-[#1a1a23] border-b border-[#2a2a35] px-6 py-3 flex items-center gap-2">
+      <span className="text-white font-bold mr-4 text-lg">Resy Bot</span>
+      {link("/", "Dashboard")}
+      {link("/add", "Add Target")}
       {link("/settings", "Settings")}
     </nav>
   );

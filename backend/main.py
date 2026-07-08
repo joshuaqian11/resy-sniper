@@ -2,6 +2,7 @@ import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from database import Database
@@ -10,7 +11,7 @@ from resy import ResyClient
 from sms import SMSClient
 from aws import AWSClient
 from scheduler import SnipeScheduler
-from routers import targets, settings as settings_router
+from routers import targets, settings as settings_router, reservations
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -24,9 +25,13 @@ def create_app(db=None, scheduler=None, aws_client=None) -> FastAPI:
             await _db.init()
         app.state.db = _db
 
-        # Init clients from DB settings
+        # Init clients from DB settings, with env vars taking precedence for Resy credentials
         cfg = await load_settings(_db)
-        resy_client = ResyClient(cfg.resy_api_key, cfg.resy_auth_token)
+        resy_api_key = os.environ.get("RESY_API_KEY") or cfg.resy_api_key
+        resy_email = os.environ.get("RESY_EMAIL") or cfg.resy_email
+        resy_password = os.environ.get("RESY_PASSWORD") or cfg.resy_password
+        resy_cookies = os.environ.get("RESY_COOKIES") or cfg.resy_cookies
+        resy_client = ResyClient(resy_api_key, resy_email, resy_password, resy_cookies)
         sms_client = SMSClient(
             cfg.twilio_account_sid, cfg.twilio_auth_token,
             cfg.twilio_from, cfg.phone_number,
@@ -57,6 +62,14 @@ def create_app(db=None, scheduler=None, aws_client=None) -> FastAPI:
 
     app = FastAPI(title="Resy Bot", lifespan=lifespan)
 
+    cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(",")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     # When all deps are injected (test mode), eagerly set state so requests
     # work even if the ASGI lifespan isn't triggered by the test transport.
     if db is not None and scheduler is not None and aws_client is not None:
@@ -66,6 +79,7 @@ def create_app(db=None, scheduler=None, aws_client=None) -> FastAPI:
 
     app.include_router(targets.router)
     app.include_router(settings_router.router)
+    app.include_router(reservations.router)
 
     @app.get("/api/health")
     async def health():

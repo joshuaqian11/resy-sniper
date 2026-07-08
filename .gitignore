@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Database
+resy.db
+*.db-shm
+*.db-wal
+
+# Playwright MCP snapshots
+.playwright-mcp/
+
+# R history
+.Rhistory

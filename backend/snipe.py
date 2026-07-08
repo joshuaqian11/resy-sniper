@@ -28,12 +28,9 @@ async def _book_with_retry(resy_client, book_token: str) -> dict:
     while True:
         try:
             return await resy_client.book(book_token)
-        except Exception as e:
-            import httpx
-            if isinstance(e, httpx.TimeoutException):
-                logger.warning("Book request timed out — retrying with same token")
-                continue
-            raise
+        except TimeoutError:
+            logger.warning("Book request timed out — retrying with same token")
+            continue
 
 async def run_snipe(target: dict, resy_client, sms_client, db) -> None:
     target_id = target["id"]
@@ -45,7 +42,7 @@ async def run_snipe(target: dict, resy_client, sms_client, db) -> None:
     preferred_end = target.get("preferred_end")
 
     await db.update_target_status(target_id, "sniping")
-    logger.info(f"[{venue_name}] Snipe started")
+    logger.info(f"[{venue_name}] Snipe started — venue_id={venue_id!r} date={date!r} party_size={party_size}")
 
     booking_in_flight = False
     booked = False
@@ -64,9 +61,16 @@ async def run_snipe(target: dict, resy_client, sms_client, db) -> None:
             sms_client.send(f"Booked {venue_name} on {date} for {party_size}!")
             logger.info(f"[{venue_name}] Booked successfully")
         except Exception as e:
-            logger.error(f"[{venue_name}] Booking failed: {e}")
-            await db.update_target_status(target_id, "failed")
-            sms_client.send(f"Failed to book {venue_name} on {date}: {e}")
+            err = str(e)
+            if "invalid book token" in err.lower():
+                # Slot was taken between get_book_token and book — release lock so
+                # the poll loop can immediately try a fresh slot on the next tick
+                logger.warning(f"[{venue_name}] Book token invalidated (slot taken) — retrying next poll")
+                booking_in_flight = False
+            else:
+                logger.error(f"[{venue_name}] Booking failed: {e}")
+                await db.update_target_status(target_id, "failed")
+                sms_client.send(f"Failed to book {venue_name} on {date}: {e}")
         finally:
             if not booked:
                 booking_in_flight = False
@@ -78,11 +82,12 @@ async def run_snipe(target: dict, resy_client, sms_client, db) -> None:
         while loop.time() < deadline and not booked:
             try:
                 slots = await resy_client.find_slots(venue_id, date, party_size)
+                logger.debug(f"[{venue_name}] find_slots returned {len(slots)} slot(s)")
                 matching = filter_slots(slots, preferred_start, preferred_end)
                 if matching and not booking_in_flight and not booked:
                     asyncio.ensure_future(attempt_booking(matching[0]))
             except Exception as e:
-                logger.warning(f"[{venue_name}] find_slots error: {e}")
+                logger.warning(f"[{venue_name}] find_slots error (venue_id={venue_id!r}, date={date!r}): {e}")
             await asyncio.sleep(interval)
 
     await poll(PHASE1_INTERVAL, PHASE1_DURATION)

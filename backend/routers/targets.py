@@ -48,9 +48,9 @@ async def delete_target(target_id: int, request: Request):
     db = request.app.state.db
     scheduler = request.app.state.scheduler
     aws = request.app.state.aws_client
-    deleted = await db.delete_target_if_pending(target_id)
+    deleted = await db.delete_target_if_not_booked(target_id)
     if not deleted:
-        raise HTTPException(status_code=409, detail="Target is not pending and cannot be deleted")
+        raise HTTPException(status_code=409, detail="Target is booked and cannot be deleted")
     scheduler.cancel_target(target_id)
     try:
         aws.delete_rule(f"resy-bot-target-{target_id}")

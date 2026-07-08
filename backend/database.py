@@ -98,6 +98,13 @@ class Database:
             await self._db.commit()
             return cursor.rowcount > 0
 
+    async def delete_target_if_not_booked(self, target_id: int) -> bool:
+        async with self._db.execute(
+            "DELETE FROM targets WHERE id = ? AND status != 'booked'", (target_id,)
+        ) as cursor:
+            await self._db.commit()
+            return cursor.rowcount > 0
+
     async def set_config(self, key: str, value: str):
         await self._db.execute(
             "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, value)

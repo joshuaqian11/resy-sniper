@@ -42,11 +42,22 @@ export interface TargetCreate {
 
 export interface AppSettings {
   resy_api_key: string;
-  resy_auth_token: string;
+  resy_email: string;
+  resy_password: string;
+  resy_cookies: string;
   twilio_account_sid: string;
   twilio_auth_token: string;
   twilio_from: string;
   phone_number: string;
+}
+
+export interface Reservation {
+  venue: { name: string };
+  date: string;
+  time_slot: string;
+  party_size: number;
+  resy_token: string;
+  [key: string]: unknown;
 }
 
 export const api = {
@@ -58,5 +69,8 @@ export const api = {
   settings: {
     get: () => request<AppSettings>("GET", "/settings"),
     update: (s: AppSettings) => request<AppSettings>("PUT", "/settings", s),
+  },
+  reservations: {
+    list: () => request<Reservation[]>("GET", "/reservations"),
   },
 };

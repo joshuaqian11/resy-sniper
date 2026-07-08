@@ -43,8 +43,14 @@ class SnipeScheduler:
             logger.warning(f"Target {target_id} opening_time is in the past — skipping")
             return
 
-        # Schedule the pre-warm 5 minutes before opening time
-        prewarm_time = opening_time - timedelta(minutes=5)
+        # Schedule the pre-warm 5 minutes before opening time.
+        # If that time is already past (e.g. target added less than 5 min before
+        # opening), fire immediately — the snipe loop will still wait until the
+        # exact opening_time before polling.
+        prewarm_time = max(
+            opening_time - timedelta(minutes=5),
+            datetime.now(timezone.utc) + timedelta(seconds=1),
+        )
 
         self._scheduler.add_job(
             self._run_prewarm_and_snipe,
@@ -52,6 +58,7 @@ class SnipeScheduler:
             run_date=prewarm_time,
             id=str(target_id),
             args=[target],
+            misfire_grace_time=600,
         )
         logger.info(f"Scheduled snipe for target {target_id} at {opening_time.isoformat()}")
 
@@ -69,9 +76,13 @@ class SnipeScheduler:
 
         self._active_jobs.add(target_id)
         try:
-            # Pre-warm connection 5 minutes before opening
+            # Pre-warm connection 5 minutes before opening using real target data
             logger.info(f"[{target['venue_name']}] Pre-warming connection")
-            await self.resy_client.connect()
+            await self.resy_client.connect(
+                venue_id=target["venue_id"],
+                date=target["date"],
+                party_size=target["party_size"],
+            )
 
             # Wait until exact opening time
             now = datetime.now(timezone.utc)

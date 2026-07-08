@@ -1,7 +1,6 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-import httpx
 from snipe import run_snipe, filter_slots
 
 # --- filter_slots tests ---
@@ -74,7 +73,7 @@ async def test_run_snipe_retries_book_on_timeout():
     mock_resy.get_book_token = AsyncMock(return_value="book-tok-xyz")
     # First call times out, second succeeds
     mock_resy.book = AsyncMock(side_effect=[
-        httpx.TimeoutException("timeout"),
+        TimeoutError("timeout"),
         {"resy_token": "res-abc"},
     ])
 
@@ -135,9 +134,7 @@ async def test_run_snipe_fails_on_terminal_book_error():
     mock_resy.find_slots = AsyncMock(return_value=[slot])
     mock_resy.get_book_token = AsyncMock(return_value="book-tok-xyz")
     # 422 = token expired/invalid — terminal error
-    mock_resy.book = AsyncMock(side_effect=httpx.HTTPStatusError(
-        "422", request=MagicMock(), response=MagicMock(status_code=422)
-    ))
+    mock_resy.book = AsyncMock(side_effect=Exception("HTTP 422 from /3/book: Token expired"))
 
     await run_snipe(target, mock_resy, mock_sms, mock_db)
 
