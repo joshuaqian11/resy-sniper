@@ -4,7 +4,11 @@ from unittest.mock import MagicMock
 from httpx import AsyncClient, ASGITransport
 from database import Database
 
-os.environ["DASHBOARD_API_KEY"] = "test-key"
+@pytest.fixture(autouse=True)
+def _set_api_key():
+    os.environ["DASHBOARD_API_KEY"] = "test-key"
+    yield
+    os.environ["DASHBOARD_API_KEY"] = "test-key"
 
 
 @pytest.fixture
