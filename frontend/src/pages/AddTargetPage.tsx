@@ -6,7 +6,7 @@ import type { TargetCreate } from "../api";
 
 const EMPTY_FORM: TargetCreate = {
   venue_id: "", venue_name: "", date: "", party_size: 2,
-  opening_time: "", preferred_start: "", preferred_end: "",
+  opening_time: "", preferred_time: "", window_start: "", window_end: "",
 };
 
 export function AddTargetPage() {
@@ -64,16 +64,22 @@ export function AddTargetPage() {
           {field("Party Size", "party_size", "number", { min: 1, max: 20, required: true })}
           {field("Opening Time (local)", "opening_time", "datetime-local", { required: true })}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="preferred_start" className="text-sm text-gray-400">Preferred Start (optional)</label>
-            <input id="preferred_start" type="time" className="bg-[#141419] border border-[#2a2a35] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
-              value={form.preferred_start ?? ""}
-              onChange={e => setForm(f => ({ ...f, preferred_start: e.target.value }))} />
+            <label htmlFor="preferred_time" className="text-sm text-gray-400">Preferred Time (optional)</label>
+            <input id="preferred_time" type="time" className="bg-[#141419] border border-[#2a2a35] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+              value={form.preferred_time ?? ""}
+              onChange={e => setForm(f => ({ ...f, preferred_time: e.target.value }))} />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="preferred_end" className="text-sm text-gray-400">Preferred End (optional)</label>
-            <input id="preferred_end" type="time" className="bg-[#141419] border border-[#2a2a35] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
-              value={form.preferred_end ?? ""}
-              onChange={e => setForm(f => ({ ...f, preferred_end: e.target.value }))} />
+            <label htmlFor="window_start" className="text-sm text-gray-400">Window Start (optional)</label>
+            <input id="window_start" type="time" className="bg-[#141419] border border-[#2a2a35] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+              value={form.window_start ?? ""}
+              onChange={e => setForm(f => ({ ...f, window_start: e.target.value }))} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="window_end" className="text-sm text-gray-400">Window End (optional)</label>
+            <input id="window_end" type="time" className="bg-[#141419] border border-[#2a2a35] rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+              value={form.window_end ?? ""}
+              onChange={e => setForm(f => ({ ...f, window_end: e.target.value }))} />
           </div>
         </div>
         <div className="pt-2">

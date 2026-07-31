@@ -3,6 +3,7 @@ const COLORS: Record<string, string> = {
   sniping: "bg-blue-500/15 text-blue-400 animate-pulse",
   booked: "bg-green-500/15 text-green-400",
   failed: "bg-red-500/15 text-red-400",
+  completed: "bg-gray-500/15 text-gray-500",
 };
 
 export function StatusBadge({ status }: { status: string }) {

@@ -12,20 +12,21 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!resp.ok) throw new Error(`${method} ${path} → ${resp.status}`);
-  if (resp.status === 204) return undefined as unknown as T;
+  if (resp.status === 204) return undefined as T;
   return resp.json();
 }
 
 export interface Target {
-  id: number;
+  id: string;
   venue_id: string;
   venue_name: string;
   date: string;
   party_size: number;
   opening_time: string;
-  preferred_start: string | null;
-  preferred_end: string | null;
-  status: "pending" | "sniping" | "booked" | "failed";
+  preferred_time: string | null;
+  window_start: string | null;
+  window_end: string | null;
+  status: "pending" | "sniping" | "booked" | "failed" | "completed";
   booked_at: string | null;
   reservation_details: string | null;
 }
@@ -36,8 +37,9 @@ export interface TargetCreate {
   date: string;
   party_size: number;
   opening_time: string;
-  preferred_start?: string;
-  preferred_end?: string;
+  preferred_time?: string;
+  window_start?: string;
+  window_end?: string;
 }
 
 export interface AppSettings {
@@ -45,10 +47,6 @@ export interface AppSettings {
   resy_email: string;
   resy_password: string;
   resy_cookies: string;
-  twilio_account_sid: string;
-  twilio_auth_token: string;
-  twilio_from: string;
-  phone_number: string;
 }
 
 export interface Reservation {
@@ -64,7 +62,7 @@ export const api = {
   targets: {
     list: () => request<Target[]>("GET", "/targets"),
     add: (t: TargetCreate) => request<Target>("POST", "/targets", t),
-    delete: (id: number) => request<void>("DELETE", `/targets/${id}`),
+    delete: (id: string) => request<void>("DELETE", `/targets/${id}`),
   },
   settings: {
     get: () => request<AppSettings>("GET", "/settings"),
