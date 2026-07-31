@@ -1,129 +1,169 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+import respx
+import httpx
 from resy import ResyClient
 
 API_KEY = "test-api-key"
-
-
-def _mock_response(status: int, json_data: dict | None = None, text: str = ""):
-    """Create a mock that behaves like a Playwright APIResponse."""
-    resp = MagicMock()
-    resp.status = status
-    resp.ok = 200 <= status < 300
-    resp.json = AsyncMock(return_value=json_data or {})
-    resp.text = AsyncMock(return_value=text)
-    return resp
+EMAIL = "test@test.com"
+PASSWORD = "test-password"
 
 
 @pytest.fixture
 def client():
-    c = ResyClient(api_key=API_KEY, email="test@example.com", password="pass123")
-    # Pre-set auth_token so connect() skips login and pre-warm
-    c.auth_token = "test-auth-token"
-    # Inject a mock request context so no real browser is launched
-    c._request = MagicMock()
-    return c
+    return ResyClient(api_key=API_KEY, email=EMAIL, password=PASSWORD)
+
+
+@pytest.mark.asyncio
+async def test_login_sets_auth_token(client):
+    with respx.mock:
+        respx.post("https://api.resy.com/3/auth/password").mock(
+            return_value=httpx.Response(200, json={
+                "token": "auth-tok-123",
+                "payment_method_id": 42,
+            })
+        )
+        await client.connect()
+        assert client.auth_token == "auth-tok-123"
+        assert client.payment_method_id == 42
+        await client.close()
 
 
 @pytest.mark.asyncio
 async def test_find_slots_returns_slots(client):
-    mock_json = {
+    mock_find = {
         "results": {
             "venues": [{
                 "slots": [
                     {
                         "date": {"start": "2026-06-15 19:00:00"},
-                        "config": {"token": "rgs://resy/abc123", "type": "DINING_ROOM"},
-                        "availability": "available",
+                        "config": {"token": "rgs://resy/abc123"},
                     }
                 ]
             }]
         }
     }
-    client._request.get = AsyncMock(return_value=_mock_response(200, mock_json))
-    slots = await client.find_slots("venue1", "2026-06-15", 2)
+    with respx.mock:
+        respx.post("https://api.resy.com/3/auth/password").mock(
+            return_value=httpx.Response(200, json={
+                "token": "auth-tok",
+                "payment_method_id": 1,
+            })
+        )
+        respx.get("https://api.resy.com/4/find").mock(
+            return_value=httpx.Response(200, json=mock_find)
+        )
+        await client.connect()
+        slots = await client.find_slots("venue1", "2026-06-15", 2)
+        await client.close()
     assert len(slots) == 1
     assert slots[0]["config"]["token"] == "rgs://resy/abc123"
 
 
 @pytest.mark.asyncio
-async def test_find_slots_returns_empty_when_no_venues(client):
-    client._request.get = AsyncMock(
-        return_value=_mock_response(200, {"results": {"venues": []}})
-    )
-    slots = await client.find_slots("venue1", "2026-06-15", 2)
+async def test_find_slots_empty_venues(client):
+    with respx.mock:
+        respx.post("https://api.resy.com/3/auth/password").mock(
+            return_value=httpx.Response(200, json={
+                "token": "auth-tok",
+                "payment_method_id": 1,
+            })
+        )
+        respx.get("https://api.resy.com/4/find").mock(
+            return_value=httpx.Response(200, json={"results": {"venues": []}})
+        )
+        await client.connect()
+        slots = await client.find_slots("venue1", "2026-06-15", 2)
+        await client.close()
     assert slots == []
 
 
 @pytest.mark.asyncio
 async def test_get_book_token(client):
-    mock_json = {"book_token": {"value": "book-tok-xyz", "date_expires": "2026-06-15T09:05:00Z"}}
-    client._request.get = AsyncMock(return_value=_mock_response(200, mock_json))
-    token = await client.get_book_token("rgs://resy/abc123", "2026-06-15", 2)
+    mock_details = {
+        "book_token": {"value": "book-tok-xyz", "date_expires": "2026-06-15T09:05:00Z"}
+    }
+    with respx.mock:
+        respx.post("https://api.resy.com/3/auth/password").mock(
+            return_value=httpx.Response(200, json={
+                "token": "auth-tok",
+                "payment_method_id": 1,
+            })
+        )
+        respx.get("https://api.resy.com/3/details").mock(
+            return_value=httpx.Response(200, json=mock_details)
+        )
+        await client.connect()
+        token = await client.get_book_token("rgs://resy/abc123", "2026-06-15", 2)
+        await client.close()
     assert token == "book-tok-xyz"
 
 
 @pytest.mark.asyncio
 async def test_book_returns_reservation(client):
-    mock_json = {"resy_token": "res-token-abc", "reservation_id": 99}
-    client._request.post = AsyncMock(return_value=_mock_response(200, mock_json))
-    result = await client.book("book-tok-xyz")
+    mock_book = {"resy_token": "res-token-abc", "reservation_id": 99}
+    with respx.mock:
+        respx.post("https://api.resy.com/3/auth/password").mock(
+            return_value=httpx.Response(200, json={
+                "token": "auth-tok",
+                "payment_method_id": 1,
+            })
+        )
+        respx.post("https://api.resy.com/3/book").mock(
+            return_value=httpx.Response(200, json=mock_book)
+        )
+        await client.connect()
+        result = await client.book("book-tok-xyz")
+        await client.close()
     assert result["resy_token"] == "res-token-abc"
 
 
 @pytest.mark.asyncio
 async def test_book_raises_on_4xx(client):
-    client._request.post = AsyncMock(
-        return_value=_mock_response(422, text="Token expired")
-    )
-    with pytest.raises(Exception, match="HTTP 422"):
-        await client.book("expired-token")
+    with respx.mock:
+        respx.post("https://api.resy.com/3/auth/password").mock(
+            return_value=httpx.Response(200, json={
+                "token": "auth-tok",
+                "payment_method_id": 1,
+            })
+        )
+        respx.post("https://api.resy.com/3/book").mock(
+            return_value=httpx.Response(422, json={"message": "Token expired"})
+        )
+        await client.connect()
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.book("expired-token")
+        await client.close()
 
 
 @pytest.mark.asyncio
-async def test_get_reservations(client):
-    mock_json = {"reservations": [{"resy_token": "res-abc"}]}
-    client._request.get = AsyncMock(return_value=_mock_response(200, mock_json))
-    reservations = await client.get_reservations()
-    assert len(reservations) == 1
+async def test_auth_header_format(client):
+    captured = {}
+    with respx.mock:
+        respx.post("https://api.resy.com/3/auth/password").mock(
+            return_value=httpx.Response(200, json={
+                "token": "auth-tok-123",
+                "payment_method_id": 1,
+            })
+        )
+
+        def capture(request):
+            captured["auth"] = request.headers.get("authorization")
+            return httpx.Response(200, json={"results": {"venues": []}})
+
+        respx.get("https://api.resy.com/4/find").mock(side_effect=capture)
+        await client.connect()
+        await client.find_slots("v1", "2026-06-15", 2)
+        await client.close()
+    assert captured["auth"] == 'ResyKey api_key="test-api-key"'
 
 
 @pytest.mark.asyncio
-async def test_auth_header_is_sent(client):
-    client._request.get = AsyncMock(
-        return_value=_mock_response(200, {"results": {"venues": []}})
-    )
-    await client.find_slots("v1", "2026-06-15", 2)
-    call_kwargs = client._request.get.call_args
-    headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
-    assert headers["authorization"] == f'ResyAPI api_key="{API_KEY}"'
-    assert headers["x-resy-auth-token"] == "test-auth-token"
-
-
-@pytest.mark.asyncio
-async def test_login_sets_auth_token(client):
-    client.auth_token = ""
-    login_response = _mock_response(200, {
-        "legacy_token": "fresh-token-123",
-        "payment_method_id": 42,
-    })
-    client._request.post = AsyncMock(return_value=login_response)
-    await client.login()
-    assert client.auth_token == "fresh-token-123"
-    assert client.payment_method_id == 42
-
-
-@pytest.mark.asyncio
-async def test_auto_refresh_on_401(client):
-    """GET that returns 401 triggers login() then retries."""
-    first_resp = _mock_response(401, text="Unauthorized")
-    second_resp = _mock_response(200, {"results": {"venues": []}})
-    client._request.get = AsyncMock(side_effect=[first_resp, second_resp])
-
-    login_resp = _mock_response(200, {"legacy_token": "refreshed-token", "payment_method_id": 1})
-    client._request.post = AsyncMock(return_value=login_resp)
-
-    slots = await client.find_slots("venue1", "2026-06-15", 2)
-    assert slots == []
-    assert client.auth_token == "refreshed-token"
-    assert client._request.get.call_count == 2
+async def test_connect_with_cookies_skips_login():
+    client = ResyClient(api_key=API_KEY, cookies="resy_auth_token=cookie-tok-456")
+    with respx.mock:
+        respx.get("https://api.resy.com/4/find").mock(
+            return_value=httpx.Response(200, json={"results": {"venues": []}})
+        )
+        await client.connect(venue_id="v1", date="2026-06-15", party_size=2)
+        assert client.auth_token == "cookie-tok-456"
+        await client.close()
