@@ -1,25 +1,25 @@
 import pytest
 from config import Settings, load_settings, save_settings
 
-@pytest.mark.asyncio
-async def test_load_settings_returns_defaults_when_empty(tmp_db):
-    settings = await load_settings(tmp_db)
+
+def test_load_settings_returns_defaults_when_empty(db):
+    settings = load_settings(db)
     assert settings.resy_api_key == ""
     assert settings.resy_email == ""
-    assert settings.phone_number == ""
+    assert settings.resy_password == ""
+    assert settings.resy_cookies == ""
 
-@pytest.mark.asyncio
-async def test_save_and_load_settings(tmp_db):
+
+def test_save_and_load_settings(db):
     s = Settings(
         resy_api_key="key123",
-        resy_email="test@example.com",
-        twilio_account_sid="AC123",
-        twilio_auth_token="twil456",
-        twilio_from="+15550001111",
-        phone_number="+15559998888",
+        resy_email="test@test.com",
+        resy_password="pass456",
+        resy_cookies="cookie-data",
     )
-    await save_settings(tmp_db, s)
-    loaded = await load_settings(tmp_db)
+    save_settings(db, s)
+    loaded = load_settings(db)
     assert loaded.resy_api_key == "key123"
-    assert loaded.resy_email == "test@example.com"
-    assert loaded.phone_number == "+15559998888"
+    assert loaded.resy_email == "test@test.com"
+    assert loaded.resy_password == "pass456"
+    assert loaded.resy_cookies == "cookie-data"
