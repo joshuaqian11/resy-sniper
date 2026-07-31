@@ -6,59 +6,29 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from database import Database
-from config import load_settings
-from resy import ResyClient
-from sms import SMSClient
 from aws import AWSClient
-from scheduler import SnipeScheduler
 from routers import targets, settings as settings_router, reservations
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
-def create_app(db=None, scheduler=None, aws_client=None) -> FastAPI:
+
+def create_app(db=None, aws_client=None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Init DB
-        _db = db or Database(os.environ.get("DATABASE_PATH", "resy.db"))
-        if not db:
-            await _db.init()
+        _db = db or Database(region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
         app.state.db = _db
 
-        # Init clients from DB settings, with env vars taking precedence for Resy credentials
-        cfg = await load_settings(_db)
-        resy_api_key = os.environ.get("RESY_API_KEY") or cfg.resy_api_key
-        resy_email = os.environ.get("RESY_EMAIL") or cfg.resy_email
-        resy_password = os.environ.get("RESY_PASSWORD") or cfg.resy_password
-        resy_cookies = os.environ.get("RESY_COOKIES") or cfg.resy_cookies
-        resy_client = ResyClient(resy_api_key, resy_email, resy_password, resy_cookies)
-        sms_client = SMSClient(
-            cfg.twilio_account_sid, cfg.twilio_auth_token,
-            cfg.twilio_from, cfg.phone_number,
+        lambda_arn = os.environ.get("LAMBDA_ARN", "")
+        _aws = aws_client or AWSClient(
+            region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+            lambda_arn=lambda_arn,
         )
-        if aws_client:
-            _aws = aws_client
-        else:
-            instance_id = AWSClient.get_instance_id()
-            _aws = AWSClient(region="us-east-1", instance_id=instance_id)
         app.state.aws_client = _aws
 
-        # Init scheduler
-        _scheduler = scheduler or SnipeScheduler(
-            db=_db, resy_client=resy_client,
-            sms_client=sms_client, aws_client=_aws,
-        )
-        if not scheduler:
-            _scheduler.start()
-            await _scheduler.reload_pending()
-        app.state.scheduler = _scheduler
+        _db.complete_past_targets()
 
         yield
-
-        if not scheduler:
-            _scheduler.shutdown()
-        if not db:
-            await _db.close()
 
     app = FastAPI(title="Resy Bot", lifespan=lifespan)
 
@@ -70,11 +40,8 @@ def create_app(db=None, scheduler=None, aws_client=None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # When all deps are injected (test mode), eagerly set state so requests
-    # work even if the ASGI lifespan isn't triggered by the test transport.
-    if db is not None and scheduler is not None and aws_client is not None:
+    if db is not None and aws_client is not None:
         app.state.db = db
-        app.state.scheduler = scheduler
         app.state.aws_client = aws_client
 
     app.include_router(targets.router)
@@ -85,11 +52,11 @@ def create_app(db=None, scheduler=None, aws_client=None) -> FastAPI:
     async def health():
         return {"status": "ok"}
 
-    # Serve React build in production
     frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
     if os.path.isdir(frontend_dist):
         app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")
 
     return app
+
 
 app = create_app()
