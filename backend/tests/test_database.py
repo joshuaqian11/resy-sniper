@@ -1,97 +1,135 @@
 import pytest
-import pytest_asyncio
 from database import Database
 
-@pytest.mark.asyncio
-async def test_tables_created(tmp_db):
-    rows = await tmp_db.execute_fetchall(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    )
-    names = {r["name"] for r in rows}
-    assert "targets" in names
-    assert "config" in names
 
-@pytest.mark.asyncio
-async def test_insert_and_fetch_target(tmp_db):
-    await tmp_db.insert_target({
+def test_insert_and_fetch_target(db):
+    target_id = db.insert_target({
         "venue_id": "123",
         "venue_name": "Carbone",
         "date": "2026-06-15",
         "party_size": 2,
-        "opening_time": "2026-05-16T09:00:00",
-        "preferred_start": "19:00",
-        "preferred_end": "21:00",
+        "opening_time": "2026-05-16T09:00:00Z",
+        "preferred_time": "19:00",
+        "window_start": "18:00",
+        "window_end": "21:00",
     })
-    targets = await tmp_db.get_all_targets()
+    assert isinstance(target_id, str)
+    targets = db.get_all_targets()
     assert len(targets) == 1
     assert targets[0]["venue_name"] == "Carbone"
     assert targets[0]["status"] == "pending"
+    assert targets[0]["party_size"] == 2
 
-@pytest.mark.asyncio
-async def test_update_target_status(tmp_db):
-    await tmp_db.insert_target({
-        "venue_id": "123", "venue_name": "Carbone",
-        "date": "2026-06-15", "party_size": 2,
-        "opening_time": "2026-05-16T09:00:00",
-        "preferred_start": None, "preferred_end": None,
+
+def test_get_target_by_id(db):
+    target_id = db.insert_target({
+        "venue_id": "123",
+        "venue_name": "Carbone",
+        "date": "2026-06-15",
+        "party_size": 2,
+        "opening_time": "2026-05-16T09:00:00Z",
     })
-    targets = await tmp_db.get_all_targets()
-    target_id = targets[0]["id"]
-    await tmp_db.update_target_status(target_id, "sniping")
-    updated = await tmp_db.get_target(target_id)
-    assert updated["status"] == "sniping"
+    target = db.get_target(target_id)
+    assert target is not None
+    assert target["venue_name"] == "Carbone"
 
-@pytest.mark.asyncio
-async def test_update_target_booked(tmp_db):
-    await tmp_db.insert_target({
-        "venue_id": "123", "venue_name": "Carbone",
-        "date": "2026-06-15", "party_size": 2,
-        "opening_time": "2026-05-16T09:00:00",
-        "preferred_start": None, "preferred_end": None,
+
+def test_get_target_missing_returns_none(db):
+    assert db.get_target("nonexistent-id") is None
+
+
+def test_update_target_status(db):
+    target_id = db.insert_target({
+        "venue_id": "123",
+        "venue_name": "Carbone",
+        "date": "2026-06-15",
+        "party_size": 2,
+        "opening_time": "2026-05-16T09:00:00Z",
     })
-    targets = await tmp_db.get_all_targets()
-    target_id = targets[0]["id"]
-    await tmp_db.update_target_booked(target_id, {"resy_token": "abc123"})
-    updated = await tmp_db.get_target(target_id)
-    assert updated["status"] == "booked"
-    assert updated["reservation_details"] == '{"resy_token": "abc123"}'
-    assert updated["booked_at"] is not None
+    db.update_target_status(target_id, "sniping")
+    target = db.get_target(target_id)
+    assert target["status"] == "sniping"
 
-@pytest.mark.asyncio
-async def test_delete_pending_target(tmp_db):
-    await tmp_db.insert_target({
-        "venue_id": "123", "venue_name": "Carbone",
-        "date": "2026-06-15", "party_size": 2,
-        "opening_time": "2026-05-16T09:00:00",
-        "preferred_start": None, "preferred_end": None,
+
+def test_update_target_booked(db):
+    target_id = db.insert_target({
+        "venue_id": "123",
+        "venue_name": "Carbone",
+        "date": "2026-06-15",
+        "party_size": 2,
+        "opening_time": "2026-05-16T09:00:00Z",
     })
-    targets = await tmp_db.get_all_targets()
-    target_id = targets[0]["id"]
-    deleted = await tmp_db.delete_target_if_pending(target_id)
-    assert deleted is True
-    assert await tmp_db.get_target(target_id) is None
+    db.update_target_booked(target_id, {"resy_token": "abc123"})
+    target = db.get_target(target_id)
+    assert target["status"] == "booked"
+    assert '"resy_token"' in target["reservation_details"]
+    assert target["booked_at"] is not None
 
-@pytest.mark.asyncio
-async def test_delete_non_pending_target_fails(tmp_db):
-    await tmp_db.insert_target({
-        "venue_id": "123", "venue_name": "Carbone",
-        "date": "2026-06-15", "party_size": 2,
-        "opening_time": "2026-05-16T09:00:00",
-        "preferred_start": None, "preferred_end": None,
+
+def test_delete_pending_target(db):
+    target_id = db.insert_target({
+        "venue_id": "123",
+        "venue_name": "Carbone",
+        "date": "2026-06-15",
+        "party_size": 2,
+        "opening_time": "2026-05-16T09:00:00Z",
     })
-    targets = await tmp_db.get_all_targets()
-    target_id = targets[0]["id"]
-    await tmp_db.update_target_status(target_id, "sniping")
-    deleted = await tmp_db.delete_target_if_pending(target_id)
-    assert deleted is False
+    assert db.delete_target_if_pending(target_id) is True
+    assert db.get_target(target_id) is None
 
-@pytest.mark.asyncio
-async def test_config_set_and_get(tmp_db):
-    await tmp_db.set_config("resy_api_key", "my-key")
-    value = await tmp_db.get_config("resy_api_key")
-    assert value == "my-key"
 
-@pytest.mark.asyncio
-async def test_config_missing_returns_none(tmp_db):
-    value = await tmp_db.get_config("nonexistent")
-    assert value is None
+def test_delete_non_pending_target_fails(db):
+    target_id = db.insert_target({
+        "venue_id": "123",
+        "venue_name": "Carbone",
+        "date": "2026-06-15",
+        "party_size": 2,
+        "opening_time": "2026-05-16T09:00:00Z",
+    })
+    db.update_target_status(target_id, "sniping")
+    assert db.delete_target_if_pending(target_id) is False
+    assert db.get_target(target_id) is not None
+
+
+def test_complete_past_targets(db):
+    past_id = db.insert_target({
+        "venue_id": "123",
+        "venue_name": "Carbone",
+        "date": "2020-01-01",
+        "party_size": 2,
+        "opening_time": "2019-12-02T09:00:00Z",
+    })
+    db.update_target_status(past_id, "booked")
+
+    future_id = db.insert_target({
+        "venue_id": "456",
+        "venue_name": "Le Bernardin",
+        "date": "2099-06-15",
+        "party_size": 4,
+        "opening_time": "2099-05-16T09:00:00Z",
+    })
+
+    db.complete_past_targets()
+
+    past = db.get_target(past_id)
+    assert past["status"] == "completed"
+
+    future = db.get_target(future_id)
+    assert future["status"] == "pending"
+
+
+def test_config_set_and_get(db):
+    db.set_config("resy_api_key", "my-key")
+    assert db.get_config("resy_api_key") == "my-key"
+
+
+def test_config_missing_returns_none(db):
+    assert db.get_config("nonexistent") is None
+
+
+def test_config_get_all(db):
+    db.set_config("resy_api_key", "key1")
+    db.set_config("resy_email", "test@test.com")
+    config = db.get_all_config()
+    assert config["resy_api_key"] == "key1"
+    assert config["resy_email"] == "test@test.com"

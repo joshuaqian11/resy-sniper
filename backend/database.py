@@ -1,122 +1,103 @@
 import json
-import aiosqlite
+import uuid
+import boto3
 from datetime import datetime, timezone
 from typing import Optional
 
+
 class Database:
-    def __init__(self, path: str):
-        self.path = path
-        self._db: Optional[aiosqlite.Connection] = None
+    def __init__(self, region: str = "us-east-1"):
+        self._dynamodb = boto3.resource("dynamodb", region_name=region)
+        self._targets = self._dynamodb.Table("resy-bot-targets")
+        self._config = self._dynamodb.Table("resy-bot-config")
 
-    async def init(self):
-        self._db = await aiosqlite.connect(self.path)
-        self._db.row_factory = aiosqlite.Row
-        await self._db.execute("PRAGMA journal_mode=WAL")
-        await self._create_tables()
+    def insert_target(self, t: dict) -> str:
+        target_id = str(uuid.uuid4())
+        item = {
+            "id": target_id,
+            "venue_id": t["venue_id"],
+            "venue_name": t["venue_name"],
+            "date": t["date"],
+            "party_size": t["party_size"],
+            "opening_time": t["opening_time"],
+            "status": "pending",
+        }
+        for key in ("preferred_time", "window_start", "window_end"):
+            if t.get(key):
+                item[key] = t[key]
+        self._targets.put_item(Item=item)
+        return target_id
 
-    async def close(self):
-        if self._db:
-            await self._db.close()
+    def get_all_targets(self) -> list[dict]:
+        response = self._targets.scan()
+        items = response.get("Items", [])
+        for item in items:
+            if "party_size" in item:
+                item["party_size"] = int(item["party_size"])
+        return sorted(items, key=lambda x: x.get("opening_time", ""))
 
-    async def _create_tables(self):
-        await self._db.execute("""
-            CREATE TABLE IF NOT EXISTS targets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                venue_id TEXT NOT NULL,
-                venue_name TEXT NOT NULL,
-                date TEXT NOT NULL,
-                party_size INTEGER NOT NULL,
-                opening_time TEXT NOT NULL,
-                preferred_start TEXT,
-                preferred_end TEXT,
-                status TEXT NOT NULL DEFAULT 'pending',
-                booked_at TEXT,
-                reservation_details TEXT
-            )
-        """)
-        await self._db.execute("""
-            CREATE TABLE IF NOT EXISTS config (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-        await self._db.commit()
+    def get_target(self, target_id: str) -> Optional[dict]:
+        response = self._targets.get_item(Key={"id": target_id})
+        item = response.get("Item")
+        if item and "party_size" in item:
+            item["party_size"] = int(item["party_size"])
+        return item
 
-    async def execute_fetchall(self, sql: str, params=()) -> list[dict]:
-        async with self._db.execute(sql, params) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-    async def insert_target(self, t: dict) -> int:
-        async with self._db.execute(
-            """INSERT INTO targets
-               (venue_id, venue_name, date, party_size, opening_time,
-                preferred_start, preferred_end, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')""",
-            (t["venue_id"], t["venue_name"], t["date"], t["party_size"],
-             t["opening_time"], t.get("preferred_start"), t.get("preferred_end"))
-        ) as cursor:
-            await self._db.commit()
-            return cursor.lastrowid
-
-    async def get_all_targets(self) -> list[dict]:
-        return await self.execute_fetchall(
-            "SELECT * FROM targets ORDER BY opening_time"
+    def update_target_status(self, target_id: str, status: str):
+        self._targets.update_item(
+            Key={"id": target_id},
+            UpdateExpression="SET #s = :status",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":status": status},
         )
 
-    async def get_pending_targets(self) -> list[dict]:
-        return await self.execute_fetchall(
-            "SELECT * FROM targets WHERE status = 'pending' ORDER BY opening_time"
-        )
-
-    async def get_target(self, target_id: int) -> Optional[dict]:
-        rows = await self.execute_fetchall(
-            "SELECT * FROM targets WHERE id = ?", (target_id,)
-        )
-        return rows[0] if rows else None
-
-    async def update_target_status(self, target_id: int, status: str):
-        await self._db.execute(
-            "UPDATE targets SET status = ? WHERE id = ?", (status, target_id)
-        )
-        await self._db.commit()
-
-    async def update_target_booked(self, target_id: int, reservation_details: dict):
+    def update_target_booked(self, target_id: str, reservation_details: dict):
         now = datetime.now(timezone.utc).isoformat()
-        await self._db.execute(
-            """UPDATE targets
-               SET status = 'booked', booked_at = ?, reservation_details = ?
-               WHERE id = ?""",
-            (now, json.dumps(reservation_details), target_id)
+        self._targets.update_item(
+            Key={"id": target_id},
+            UpdateExpression="SET #s = :status, booked_at = :booked_at, reservation_details = :details",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":status": "booked",
+                ":booked_at": now,
+                ":details": json.dumps(reservation_details),
+            },
         )
-        await self._db.commit()
 
-    async def delete_target_if_pending(self, target_id: int) -> bool:
-        async with self._db.execute(
-            "DELETE FROM targets WHERE id = ? AND status = 'pending'", (target_id,)
-        ) as cursor:
-            await self._db.commit()
-            return cursor.rowcount > 0
+    def delete_target_if_pending(self, target_id: str) -> bool:
+        try:
+            self._targets.delete_item(
+                Key={"id": target_id},
+                ConditionExpression="#s = :pending",
+                ExpressionAttributeNames={"#s": "status"},
+                ExpressionAttributeValues={":pending": "pending"},
+            )
+            return True
+        except self._dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
+            return False
 
-    async def delete_target_if_not_booked(self, target_id: int) -> bool:
-        async with self._db.execute(
-            "DELETE FROM targets WHERE id = ? AND status != 'booked'", (target_id,)
-        ) as cursor:
-            await self._db.commit()
-            return cursor.rowcount > 0
-
-    async def set_config(self, key: str, value: str):
-        await self._db.execute(
-            "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, value)
+    def complete_past_targets(self):
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        response = self._targets.scan(
+            FilterExpression="#s IN (:booked, :failed) AND #d < :today",
+            ExpressionAttributeNames={"#s": "status", "#d": "date"},
+            ExpressionAttributeValues={
+                ":booked": "booked",
+                ":failed": "failed",
+                ":today": today,
+            },
         )
-        await self._db.commit()
+        for item in response.get("Items", []):
+            self.update_target_status(item["id"], "completed")
 
-    async def get_config(self, key: str) -> Optional[str]:
-        rows = await self.execute_fetchall(
-            "SELECT value FROM config WHERE key = ?", (key,)
-        )
-        return rows[0]["value"] if rows else None
+    def set_config(self, key: str, value: str):
+        self._config.put_item(Item={"key": key, "value": value})
 
-    async def get_all_config(self) -> dict[str, str]:
-        rows = await self.execute_fetchall("SELECT key, value FROM config")
-        return {r["key"]: r["value"] for r in rows}
+    def get_config(self, key: str) -> Optional[str]:
+        response = self._config.get_item(Key={"key": key})
+        item = response.get("Item")
+        return item["value"] if item else None
+
+    def get_all_config(self) -> dict[str, str]:
+        response = self._config.scan()
+        return {item["key"]: item["value"] for item in response.get("Items", [])}
