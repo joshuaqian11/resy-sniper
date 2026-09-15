@@ -21,4 +21,24 @@ echo "Creating app directory..."
 sudo mkdir -p /opt/resy-bot
 sudo chown ec2-user:ec2-user /opt/resy-bot
 
+echo "Installing systemd service..."
+sudo tee /etc/systemd/system/resy-bot.service > /dev/null << 'SVC'
+[Unit]
+Description=Resy Bot Snipe Runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/resy-bot
+ExecStart=/usr/bin/python3.12 /opt/resy-bot/snipe_runner.py
+Environment=PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
+SVC
+sudo systemctl daemon-reload
+sudo systemctl enable resy-bot.service
+
 echo "EC2 setup complete."
