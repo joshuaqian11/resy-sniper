@@ -7,9 +7,12 @@ REGION = "us-east-1"
 LAMBDA_ARN = "arn:aws:lambda:us-east-1:123456789:function:resy-bot-snipe"
 
 
+INSTANCE_ID = "i-0123456789abcdef0"
+
+
 @pytest.fixture
 def aws_client(aws_env):
-    return AWSClient(region=REGION, lambda_arn=LAMBDA_ARN)
+    return AWSClient(region=REGION, instance_id=INSTANCE_ID, lambda_arn=LAMBDA_ARN)
 
 
 @mock_aws
