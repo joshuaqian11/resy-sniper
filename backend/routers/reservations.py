@@ -16,6 +16,7 @@ async def get_reservations(request: Request):
         return []
     client = ResyClient(
         api_key=settings.resy_api_key,
+        auth_token=settings.resy_auth_token,
         email=settings.resy_email,
         password=settings.resy_password,
         cookies=settings.resy_cookies,

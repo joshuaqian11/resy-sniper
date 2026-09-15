@@ -2,13 +2,14 @@ from dataclasses import dataclass, fields
 from database import Database
 
 CONFIG_KEYS = [
-    "resy_api_key", "resy_email", "resy_password", "resy_cookies",
+    "resy_api_key", "resy_auth_token", "resy_email", "resy_password", "resy_cookies",
 ]
 
 
 @dataclass
 class Settings:
     resy_api_key: str = ""
+    resy_auth_token: str = ""
     resy_email: str = ""
     resy_password: str = ""
     resy_cookies: str = ""

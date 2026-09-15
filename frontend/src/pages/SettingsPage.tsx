@@ -3,8 +3,8 @@ import { api } from "../api";
 import type { AppSettings } from "../api";
 
 const EMPTY: AppSettings = {
-  resy_api_key: "", resy_email: "",
-  resy_password: "", resy_cookies: "",
+  resy_api_key: "", resy_auth_token: "",
+  resy_email: "", resy_password: "", resy_cookies: "",
 };
 
 export function SettingsPage() {
@@ -53,6 +53,7 @@ export function SettingsPage() {
             <p className="text-xs text-gray-500 mt-1">Find these in your browser's Network tab when browsing Resy.</p>
           </div>
           {field("API Key", "resy_api_key")}
+          {field("Auth Token", "resy_auth_token")}
           {field("Email", "resy_email")}
           {field("Password", "resy_password", "password")}
           <div className="flex flex-col gap-1.5">

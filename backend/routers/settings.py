@@ -8,6 +8,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 class SettingsBody(BaseModel):
     resy_api_key: str = ""
+    resy_auth_token: str = ""
     resy_email: str = ""
     resy_password: str = ""
     resy_cookies: str = ""

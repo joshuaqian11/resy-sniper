@@ -44,6 +44,7 @@ export interface TargetCreate {
 
 export interface AppSettings {
   resy_api_key: string;
+  resy_auth_token: string;
   resy_email: string;
   resy_password: string;
   resy_cookies: string;
