@@ -51,8 +51,7 @@ async def _book_with_retry(resy_client, book_token: str) -> dict:
         try:
             return await resy_client.book(book_token)
         except Exception as e:
-            import httpx
-            if isinstance(e, httpx.TimeoutException):
+            if "timeout" in str(e).lower():
                 logger.warning("Book request timed out — retrying with same token")
                 continue
             raise
