@@ -20,8 +20,10 @@ def create_app(db=None, aws_client=None) -> FastAPI:
         app.state.db = _db
 
         lambda_arn = os.environ.get("LAMBDA_ARN", "")
+        ec2_instance_id = os.environ.get("EC2_INSTANCE_ID", "")
         _aws = aws_client or AWSClient(
             region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+            instance_id=ec2_instance_id,
             lambda_arn=lambda_arn,
         )
         app.state.aws_client = _aws
