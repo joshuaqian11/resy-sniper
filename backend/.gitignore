@@ -7,4 +7,5 @@ resy.db
 *.db-shm
 *.db-wal
 test_resy.pyc
+venv/
 
