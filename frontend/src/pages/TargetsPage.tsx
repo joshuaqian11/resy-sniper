@@ -42,7 +42,10 @@ export function TargetsPage() {
     setAdding(true);
     setError("");
     try {
-      await api.targets.add(form);
+      await api.targets.add({
+        ...form,
+        opening_time: new Date(form.opening_time).toISOString(),
+      });
       setForm(EMPTY_FORM);
       await loadTargets();
     } catch {
@@ -95,7 +98,7 @@ export function TargetsPage() {
         {field("Venue Name", "venue_name", "text", { required: true })}
         {field("Date", "date", "date", { required: true })}
         {field("Party Size", "party_size", "number", { min: 1, max: 20, required: true })}
-        {field("Opening Time (UTC)", "opening_time", "datetime-local", { required: true })}
+        {field("Opening Time (local)", "opening_time", "datetime-local", { required: true })}
         {field("Preferred Time (optional)", "preferred_time", "time")}
         {field("Window Start (optional)", "window_start", "time")}
         {field("Window End (optional)", "window_end", "time")}
