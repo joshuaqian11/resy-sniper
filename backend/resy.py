@@ -7,6 +7,8 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.resy.com"
+# Resy returns 419 (not 401) for an expired token
+AUTH_ERROR_STATUSES = (401, 419)
 
 
 class ResyClient:
@@ -22,7 +24,7 @@ class ResyClient:
         self._context = None
         self._request = None
 
-    def _headers(self) -> dict:
+    def _headers(self, overrides: dict = None) -> dict:
         headers = {
             "authorization": f'ResyAPI api_key="{self.api_key}"',
             "accept": "application/json, text/plain, */*",
@@ -36,7 +38,12 @@ class ResyClient:
         if self.auth_token:
             headers["x-resy-auth-token"] = self.auth_token
             headers["x-resy-universal-auth"] = self.auth_token
+        if overrides:
+            headers.update(overrides)
         return headers
+
+    def _can_login(self) -> bool:
+        return bool(self.email and self.password)
 
     async def _login(self):
         resp = await self._request.post(
@@ -65,7 +72,8 @@ class ResyClient:
         self._context = await self._browser.new_context()
         self._request = self._context.request
 
-        if not self.auth_token and self.email and self.password:
+        # Always log in fresh when credentials exist — stored tokens expire.
+        if self._can_login():
             await self._login()
         if venue_id and date:
             await self.find_slots(venue_id, date, party_size)
@@ -79,32 +87,32 @@ class ResyClient:
             self._playwright = None
 
     async def _get(self, path: str, params: dict) -> dict:
-        qs = urlencode(params)
-        url = f"{BASE_URL}{path}?{qs}"
+        url = f"{BASE_URL}{path}?{urlencode(params)}"
         resp = await self._request.get(url, headers=self._headers())
+        if resp.status in AUTH_ERROR_STATUSES and self._can_login():
+            logger.info(f"Got {resp.status} — refreshing auth token")
+            await self._login()
+            resp = await self._request.get(url, headers=self._headers())
         if not resp.ok:
             body = await resp.text()
             raise Exception(f"HTTP {resp.status} from {path}: {body[:200]}")
         return await resp.json()
 
-    async def _post_form(self, path: str, payload: dict, headers: dict = None) -> dict:
-        hdrs = headers or self._headers()
-        hdrs["content-type"] = "application/x-www-form-urlencoded"
-        resp = await self._request.post(
-            f"{BASE_URL}{path}",
-            data=urlencode(payload),
-            headers=hdrs,
-        )
-        if resp.status == 401 and self.email and self.password:
-            logger.info("Got 401 — refreshing auth token")
-            await self._login()
-            hdrs = headers or self._headers()
+    async def _post_form(self, path: str, payload: dict, header_overrides: dict = None) -> dict:
+        async def post():
+            hdrs = self._headers(header_overrides)
             hdrs["content-type"] = "application/x-www-form-urlencoded"
-            resp = await self._request.post(
+            return await self._request.post(
                 f"{BASE_URL}{path}",
                 data=urlencode(payload),
                 headers=hdrs,
             )
+
+        resp = await post()
+        if resp.status in AUTH_ERROR_STATUSES and self._can_login():
+            logger.info(f"Got {resp.status} — refreshing auth token")
+            await self._login()
+            resp = await post()
         if not resp.ok:
             body = await resp.text()
             raise Exception(f"HTTP {resp.status} from {path}: {body[:200]}")
@@ -129,15 +137,16 @@ class ResyClient:
         return data["book_token"]["value"]
 
     async def book(self, book_token: str) -> dict:
-        book_headers = self._headers()
-        book_headers["origin"] = "https://widgets.resy.com"
-        book_headers["referer"] = "https://widgets.resy.com/"
-        book_headers["x-origin"] = "https://widgets.resy.com"
+        book_headers = {
+            "origin": "https://widgets.resy.com",
+            "referer": "https://widgets.resy.com/",
+            "x-origin": "https://widgets.resy.com",
+        }
         return await self._post_form("/3/book", {
             "book_token": book_token,
             "struct_payment_method": json.dumps({"id": self.payment_method_id}),
             "source_id": "resy.com-venue-details",
-        }, headers=book_headers)
+        }, header_overrides=book_headers)
 
     async def get_reservations(self) -> list[dict]:
         resp = await self._request.get(
