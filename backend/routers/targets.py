@@ -1,9 +1,11 @@
 import logging
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from typing import Optional
 from auth import require_api_key
+from config import load_settings
+from resy import ResyClient
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/targets", tags=["targets"])
@@ -26,13 +28,35 @@ def _opening_time_to_cron(opening_time: datetime) -> str:
     return f"cron({t.minute} {t.hour} {t.day} {t.month} ? {t.year})"
 
 
+async def _refresh_resy_token(db):
+    """Log in from the dashboard's (non-AWS) IP and store the token as the EC2 runner's fallback."""
+    settings = load_settings(db)
+    if not (settings.resy_api_key and settings.resy_email and settings.resy_password):
+        return
+    client = ResyClient(
+        api_key=settings.resy_api_key,
+        auth_token=settings.resy_auth_token,
+        email=settings.resy_email,
+        password=settings.resy_password,
+    )
+    try:
+        await client.connect()
+        if client.logged_in:
+            db.set_config("resy_auth_token", client.auth_token)
+            logger.info("Refreshed stored Resy auth token")
+    except Exception as e:
+        logger.warning(f"Resy token refresh failed: {e}")
+    finally:
+        await client.close()
+
+
 @router.get("", dependencies=[Depends(require_api_key)])
 async def list_targets(request: Request):
     return request.app.state.db.get_all_targets()
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_api_key)])
-async def add_target(body: TargetCreate, request: Request):
+async def add_target(body: TargetCreate, request: Request, background_tasks: BackgroundTasks):
     db = request.app.state.db
     aws = request.app.state.aws_client
     target_data = body.model_dump()
@@ -49,6 +73,7 @@ async def add_target(body: TargetCreate, request: Request):
     except Exception as e:
         logger.warning(f"EventBridge rule creation failed: {e}")
 
+    background_tasks.add_task(_refresh_resy_token, db)
     return target
 
 

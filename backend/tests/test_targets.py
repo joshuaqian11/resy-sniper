@@ -1,6 +1,6 @@
 import os
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient, ASGITransport
 from database import Database
 
@@ -24,6 +24,70 @@ def test_app(db, mock_aws_client):
     from main import create_app
     app = create_app(db=db, aws_client=mock_aws_client)
     return app, db, mock_aws_client
+
+
+def make_fake_resy_client(logged_in: bool, token: str = "fresh-token"):
+    fake = MagicMock()
+    fake.connect = AsyncMock()
+    fake.close = AsyncMock()
+    fake.logged_in = logged_in
+    fake.auth_token = token
+    return fake
+
+
+TARGET_BODY = {
+    "venue_id": "123",
+    "venue_name": "Carbone",
+    "date": "2026-06-15",
+    "party_size": 2,
+    "opening_time": "2099-05-16T09:00:00Z",
+}
+
+
+@pytest.mark.asyncio
+async def test_add_target_refreshes_stored_resy_token(test_app):
+    app, db, _ = test_app
+    db.set_config("resy_api_key", "key")
+    db.set_config("resy_email", "a@b.com")
+    db.set_config("resy_password", "pw")
+    db.set_config("resy_auth_token", "old-token")
+    fake = make_fake_resy_client(logged_in=True)
+    with patch("routers.targets.ResyClient", return_value=fake):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post("/api/targets", headers={"x-api-key": "test-key"}, json=TARGET_BODY)
+    assert resp.status_code == 201
+    assert db.get_config("resy_auth_token") == "fresh-token"
+    fake.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_add_target_keeps_token_when_login_does_not_happen(test_app):
+    app, db, _ = test_app
+    db.set_config("resy_api_key", "key")
+    db.set_config("resy_auth_token", "old-token")
+    fake = make_fake_resy_client(logged_in=False, token="old-token")
+    with patch("routers.targets.ResyClient", return_value=fake):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post("/api/targets", headers={"x-api-key": "test-key"}, json=TARGET_BODY)
+    assert resp.status_code == 201
+    assert db.get_config("resy_auth_token") == "old-token"
+
+
+@pytest.mark.asyncio
+async def test_add_target_succeeds_when_token_refresh_errors(test_app):
+    app, db, _ = test_app
+    db.set_config("resy_api_key", "key")
+    db.set_config("resy_email", "a@b.com")
+    db.set_config("resy_password", "pw")
+    db.set_config("resy_auth_token", "old-token")
+    fake = make_fake_resy_client(logged_in=False)
+    fake.connect = AsyncMock(side_effect=RuntimeError("Login failed 500"))
+    with patch("routers.targets.ResyClient", return_value=fake):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post("/api/targets", headers={"x-api-key": "test-key"}, json=TARGET_BODY)
+    assert resp.status_code == 201
+    assert db.get_config("resy_auth_token") == "old-token"
+    fake.close.assert_called_once()
 
 
 @pytest.mark.asyncio
