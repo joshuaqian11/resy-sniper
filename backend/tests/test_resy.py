@@ -8,11 +8,12 @@ EMAIL = "test@test.com"
 PASSWORD = "test-password"
 
 
-def make_mock_response(status=200, body=None):
+def make_mock_response(status=200, body=None, headers=None):
     """Create a mock Playwright APIResponse."""
     resp = AsyncMock()
     resp.status = status
     resp.ok = 200 <= status < 300
+    resp.headers = headers or {}
     resp.text = AsyncMock(return_value=json.dumps(body or {}))
     resp.json = AsyncMock(return_value=body or {})
     return resp
@@ -179,6 +180,54 @@ async def test_book_relogs_in_on_auth_error_with_fresh_token(client, mock_reques
     retry_headers = mock_request.post.call_args.kwargs["headers"]
     assert retry_headers["x-resy-auth-token"] == "fresh-token"
     assert retry_headers["origin"] == "https://widgets.resy.com"
+
+
+@pytest.mark.asyncio
+async def test_connect_falls_back_to_stored_token_when_login_fails(mock_request):
+    mock_request.post.return_value = make_mock_response(500, {"error": {"status-code": "500"}})
+    with patch_playwright(mock_request):
+        client = ResyClient(api_key=API_KEY, auth_token="stored-token", email=EMAIL, password=PASSWORD)
+        await client.connect()
+    assert client.auth_token == "stored-token"
+    assert client.logged_in is False
+
+
+@pytest.mark.asyncio
+async def test_connect_raises_when_login_fails_without_stored_token(mock_request):
+    mock_request.post.return_value = make_mock_response(500, {"error": {"status-code": "500"}})
+    with patch_playwright(mock_request):
+        client = ResyClient(api_key=API_KEY, email=EMAIL, password=PASSWORD)
+        with pytest.raises(RuntimeError, match="Login failed 500"):
+            await client.connect()
+
+
+@pytest.mark.asyncio
+async def test_successful_login_sets_logged_in(client, mock_request):
+    mock_request.post.return_value = make_mock_response(200, {"legacy_token": "fresh-token"})
+    assert client.logged_in is False
+    await client._login()
+    assert client.logged_in is True
+
+
+@pytest.mark.asyncio
+async def test_get_error_includes_imperva_info(client, mock_request):
+    client.auth_token = "tok"
+    mock_request.get.return_value = make_mock_response(500, {}, headers={"x-iinfo": "45-1-2 PNNN RT(1 2)"})
+    with pytest.raises(Exception, match=r"HTTP 500 from /4/find \(x-iinfo=45-1-2 PNNN RT\(1 2\)\)"):
+        await client.find_slots("v1", "2026-06-15", 2)
+
+
+@pytest.mark.asyncio
+async def test_reset_session_replaces_browser_context(client):
+    old_context = AsyncMock()
+    client._context = old_context
+    new_context = MagicMock()
+    new_context.request = AsyncMock()
+    client._browser.new_context = AsyncMock(return_value=new_context)
+    await client.reset_session()
+    old_context.close.assert_called_once()
+    assert client._context is new_context
+    assert client._request is new_context.request
 
 
 @pytest.mark.asyncio

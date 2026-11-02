@@ -19,6 +19,7 @@ class ResyClient:
         self.cookies = cookies
         self.auth_token: Optional[str] = auth_token or None
         self.payment_method_id: int = 0
+        self.logged_in = False
         self._playwright = None
         self._browser = None
         self._context = None
@@ -60,10 +61,12 @@ class ResyClient:
         if not resp.ok:
             raise RuntimeError(f"Login failed {resp.status}: {(await resp.text())[:200]}")
         data = await resp.json()
-        self.auth_token = data.get("legacy_token") or data.get("token")
-        self.payment_method_id = data.get("payment_method_id") or 0
-        if not self.auth_token:
+        token = data.get("legacy_token") or data.get("token")
+        if not token:
             raise RuntimeError("Login failed: no auth token in response")
+        self.auth_token = token
+        self.payment_method_id = data.get("payment_method_id") or 0
+        self.logged_in = True
         logger.info("Resy login successful")
 
     async def connect(self, venue_id: str = None, date: str = None, party_size: int = 2):
@@ -73,10 +76,24 @@ class ResyClient:
         self._request = self._context.request
 
         # Always log in fresh when credentials exist — stored tokens expire.
+        # Resy sometimes refuses logins from AWS IPs, so fall back to the stored token.
         if self._can_login():
-            await self._login()
+            try:
+                await self._login()
+            except RuntimeError as e:
+                if not self.auth_token:
+                    raise
+                logger.warning(f"{e} — continuing with stored auth token")
         if venue_id and date:
             await self.find_slots(venue_id, date, party_size)
+
+    async def reset_session(self):
+        """Swap in a fresh browser context (new cookies / Imperva session)."""
+        if self._context:
+            await self._context.close()
+        self._context = await self._browser.new_context()
+        self._request = self._context.request
+        logger.info("Reset browser session")
 
     async def close(self):
         if self._browser:
@@ -95,7 +112,7 @@ class ResyClient:
             resp = await self._request.get(url, headers=self._headers())
         if not resp.ok:
             body = await resp.text()
-            raise Exception(f"HTTP {resp.status} from {path}: {body[:200]}")
+            raise Exception(f"HTTP {resp.status} from {path} (x-iinfo={resp.headers.get('x-iinfo')}): {body[:200]}")
         return await resp.json()
 
     async def _post_form(self, path: str, payload: dict, header_overrides: dict = None) -> dict:
