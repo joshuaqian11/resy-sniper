@@ -2,6 +2,7 @@
 """EC2 entry point: read target from SSM, run snipe with Playwright, stop instance."""
 import asyncio
 import logging
+import time
 import boto3
 import urllib.request
 from datetime import datetime, timezone
@@ -14,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 SSM_PARAM_NAME = "/resy-bot/pending-target-id"
 REGION = "us-east-1"
+# Gives the CloudWatch agent (5s flush interval) time to ship the final log lines
+LOG_FLUSH_SECONDS = 15
 
 
 def get_instance_id() -> str:
@@ -95,15 +98,20 @@ async def main():
     logger.info(f"Snipe complete — status: {status}")
 
 
+def stop_instance():
+    """Stop this EC2 instance once the final log lines have shipped."""
+    instance_id = get_instance_id()
+    if not instance_id:
+        logger.warning("Could not determine instance ID — instance will not auto-stop")
+        return
+    logger.info(f"Stopping instance {instance_id} in {LOG_FLUSH_SECONDS}s")
+    time.sleep(LOG_FLUSH_SECONDS)
+    ec2 = boto3.client("ec2", region_name=REGION)
+    ec2.stop_instances(InstanceIds=[instance_id])
+
+
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     finally:
-        # Stop this EC2 instance
-        instance_id = get_instance_id()
-        if instance_id:
-            logger.info(f"Stopping instance {instance_id}")
-            ec2 = boto3.client("ec2", region_name=REGION)
-            ec2.stop_instances(InstanceIds=[instance_id])
-        else:
-            logger.warning("Could not determine instance ID — instance will not auto-stop")
+        stop_instance()
