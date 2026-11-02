@@ -7,6 +7,8 @@ PHASE1_DURATION = 60.0
 PHASE2_DURATION = 60.0
 PHASE1_INTERVAL = 1.0
 PHASE2_INTERVAL = 2.0
+# After this many find errors in a row, start a fresh browser session
+CONSECUTIVE_ERRORS_BEFORE_RESET = 5
 
 
 def _extract_time(slot: dict) -> str:
@@ -94,17 +96,30 @@ async def run_snipe(target: dict, resy_client, db) -> None:
 
     loop = asyncio.get_event_loop()
 
+    consecutive_errors = 0
+
     async def poll(interval: float, duration: float):
+        nonlocal consecutive_errors
         deadline = loop.time() + duration
         while loop.time() < deadline and not booked:
             try:
                 slots = await resy_client.find_slots(venue_id, date, party_size)
+                consecutive_errors = 0
                 matching = filter_slots(slots, window_start, window_end)
                 best = pick_best_slot(matching, preferred_time)
                 if best and not booking_in_flight and not booked:
                     asyncio.ensure_future(attempt_booking(best))
             except Exception as e:
+                consecutive_errors += 1
                 logger.warning(f"[{venue_name}] find_slots error: {e}")
+                # Never swap the context out from under an in-flight booking
+                if consecutive_errors >= CONSECUTIVE_ERRORS_BEFORE_RESET and not booking_in_flight:
+                    logger.warning(f"[{venue_name}] {consecutive_errors} find errors in a row — resetting session")
+                    consecutive_errors = 0
+                    try:
+                        await resy_client.reset_session()
+                    except Exception as reset_err:
+                        logger.error(f"[{venue_name}] Session reset failed: {reset_err}")
             await asyncio.sleep(interval)
 
     await poll(PHASE1_INTERVAL, PHASE1_DURATION)

@@ -133,6 +133,48 @@ async def test_run_snipe_marks_failed_when_no_slots():
     mock_db.update_target_status.assert_any_call("test-uuid-1", "failed")
 
 
+def scripted_find(outcomes):
+    """find_slots side effect: play `outcomes` (an Exception is raised), then return [] forever."""
+    calls = iter(outcomes)
+
+    async def find(*_args):
+        outcome = next(calls, [])
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+    return find
+
+
+@pytest.mark.asyncio
+async def test_run_snipe_resets_session_after_consecutive_find_errors():
+    target = make_target()
+    mock_db = MagicMock()
+    mock_resy = AsyncMock()
+    error = Exception("HTTP 500 from /4/find")
+    mock_resy.find_slots = AsyncMock(side_effect=scripted_find([error] * 5))
+
+    with patch("snipe.PHASE1_INTERVAL", 0), patch("snipe.PHASE1_DURATION", 0.05), \
+            patch("snipe.PHASE2_DURATION", 0):
+        await run_snipe(target, mock_resy, mock_db)
+
+    mock_resy.reset_session.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_snipe_does_not_reset_session_on_intermittent_errors():
+    target = make_target()
+    mock_db = MagicMock()
+    mock_resy = AsyncMock()
+    error = Exception("HTTP 500 from /4/find")
+    mock_resy.find_slots = AsyncMock(side_effect=scripted_find(([error] * 4 + [[]]) * 3))
+
+    with patch("snipe.PHASE1_INTERVAL", 0), patch("snipe.PHASE1_DURATION", 0.05), \
+            patch("snipe.PHASE2_DURATION", 0):
+        await run_snipe(target, mock_resy, mock_db)
+
+    mock_resy.reset_session.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_run_snipe_fails_on_terminal_book_error():
     target = make_target()
